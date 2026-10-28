@@ -125,5 +125,8 @@ if (process.argv[2] === "segment") {
   console.log(`appids ${start}-${end}: done`);
   process.exit(0);
 } else {
+  // Something in the parent keeps the event loop alive once the crawl is
+  // done, so exit explicitly.
   await crawlAll();
+  process.exit(0);
 }

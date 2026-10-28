@@ -1,0 +1,8 @@
+{
+  "name": "steam-app-list",
+  "private": true,
+  "description": "Daily list of Steam apps with achievements or stats, for SamRewritten",
+  "dependencies": {
+    "steam-user": "^5.3.0"
+  }
+}

@@ -18,6 +18,7 @@ const SEGMENT_TIMEOUT_MS = 15 * 60_000;
 const MIN_APPS = Number(process.env.MIN_APPS ?? 80_000);
 const OUTPUT = process.env.OUTPUT ?? "games.xml";
 const GIBBED_LIST_URL = "https://gib.me/sam/games.xml";
+const PUBLISHED_LIST_URL = "https://raw.githubusercontent.com/PaulCombal/steam-app-list/list/games.xml";
 
 // Listed when Steam exposes community stats for the app; the value is the
 // XML type attribute.
@@ -111,14 +112,24 @@ async function crawlAll() {
     throw new Error(`Only ${listed.length} apps, refusing to publish a partial list`);
   }
 
+  // gibbed's list also has apps whose stats are hidden from the community
+  // (e.g. Dota 2), which PICS can't tell apart anonymously, and hand-picked
+  // "junk" / "mod" types, which win over ours. If gib.me is down, merging our
+  // previous list keeps those apps: the list then only grows.
+  let source = "gibbed's list";
+  let extra = await fetchList(GIBBED_LIST_URL);
+  if (!extra) {
+    source = "the previously published list";
+    extra = (await fetchList(PUBLISHED_LIST_URL)) ?? [];
+  }
+
   const merged = new Map<number, string | null>(listed);
-  const gibbed = await fetchGibbedList();
   let added = 0;
-  for (const [id, type] of gibbed) {
+  for (const [id, type] of extra) {
     if (!merged.has(id)) added++;
     merged.set(id, type);
   }
-  console.log(`${gibbed.length} apps in gibbed's list, ${added} not found by the crawl`);
+  console.log(`${extra.length} apps in ${source}, ${added} not found by the crawl`);
 
   const games = [...merged]
     .sort((a, b) => a[0] - b[0])
@@ -128,20 +139,19 @@ async function crawlAll() {
   console.log(`${merged.size} apps written to ${OUTPUT}`);
 }
 
-// gibbed's list also has apps whose stats are hidden from the community (e.g.
-// Dota 2), which PICS can't tell apart anonymously, and hand-picked "junk" /
-// "mod" types, which win over ours. Optional: without it we publish our own.
-async function fetchGibbedList(): Promise<Listed[]> {
+async function fetchList(url: string): Promise<Listed[] | null> {
   try {
-    const response = await fetch(GIBBED_LIST_URL, { signal: AbortSignal.timeout(120_000) });
+    const response = await fetch(url, { signal: AbortSignal.timeout(120_000) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const xml = await response.text();
-    return [...xml.matchAll(/<game(?: type="([^"]+)")?>(\d+)<\/game>/g)].map(
+    const apps = [...xml.matchAll(/<game(?: type="([^"]+)")?>(\d+)<\/game>/g)].map(
       (m) => [Number(m[2]), m[1] ?? null] as Listed,
     );
+    if (apps.length === 0) throw new Error("no apps in the response");
+    return apps;
   } catch (e) {
-    console.log(`Could not fetch gibbed's list, publishing ours alone: ${(e as Error).message}`);
-    return [];
+    console.log(`Could not fetch ${url}: ${(e as Error).message}`);
+    return null;
   }
 }
 

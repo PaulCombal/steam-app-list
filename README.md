@@ -22,7 +22,7 @@ Steam doesn't flag apps whose stats are hidden from the community (Dota 2, for
 example), and an anonymous session can't fetch stats schemas to find them. So
 each run also merges in [gibbed's list](https://gib.me/sam/games.xml) when it is
 reachable; where both list an app, gibbed's type wins. If gib.me is down, the
-crawled list is published alone.
+previously published list is merged instead, so an outage only ever adds apps.
 
 No Steam account or API key is needed. The anonymous change feed only covers
 the last few minutes, so every run is a full crawl (about 15 minutes).

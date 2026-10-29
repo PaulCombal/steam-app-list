@@ -17,6 +17,7 @@ const REQUEST_TIMEOUT_MS = 60_000;
 const SEGMENT_TIMEOUT_MS = 15 * 60_000;
 const MIN_APPS = Number(process.env.MIN_APPS ?? 80_000);
 const OUTPUT = process.env.OUTPUT ?? "games.xml";
+const GIBBED_LIST_URL = "https://gib.me/sam/games.xml";
 
 // Listed when Steam exposes community stats for the app; the value is the
 // XML type attribute.
@@ -110,12 +111,38 @@ async function crawlAll() {
     throw new Error(`Only ${listed.length} apps, refusing to publish a partial list`);
   }
 
-  listed.sort((a, b) => a[0] - b[0]);
-  const games = listed
+  const merged = new Map<number, string | null>(listed);
+  const gibbed = await fetchGibbedList();
+  let added = 0;
+  for (const [id, type] of gibbed) {
+    if (!merged.has(id)) added++;
+    merged.set(id, type);
+  }
+  console.log(`${gibbed.length} apps in gibbed's list, ${added} not found by the crawl`);
+
+  const games = [...merged]
+    .sort((a, b) => a[0] - b[0])
     .map(([id, type]) => (type ? `<game type="${type}">${id}</game>` : `<game>${id}</game>`))
     .join("");
   await Bun.write(OUTPUT, `<?xml version="1.0"?>\n<games>${games}</games>\n`);
-  console.log(`${listed.length} apps written to ${OUTPUT}`);
+  console.log(`${merged.size} apps written to ${OUTPUT}`);
+}
+
+// gibbed's list also has apps whose stats are hidden from the community (e.g.
+// Dota 2), which PICS can't tell apart anonymously, and hand-picked "junk" /
+// "mod" types, which win over ours. Optional: without it we publish our own.
+async function fetchGibbedList(): Promise<Listed[]> {
+  try {
+    const response = await fetch(GIBBED_LIST_URL, { signal: AbortSignal.timeout(120_000) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const xml = await response.text();
+    return [...xml.matchAll(/<game(?: type="([^"]+)")?>(\d+)<\/game>/g)].map(
+      (m) => [Number(m[2]), m[1] ?? null] as Listed,
+    );
+  } catch (e) {
+    console.log(`Could not fetch gibbed's list, publishing ours alone: ${(e as Error).message}`);
+    return [];
+  }
 }
 
 if (process.argv[2] === "segment") {
